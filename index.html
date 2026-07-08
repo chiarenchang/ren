@@ -289,7 +289,7 @@ const CONFIG = {
   HOST_NAME: "團主：嘉樂",
   DEADLINE: "2026/07/05（日）23:59 截止",
   PICKUP_NOTE: "預計截止後 7–10 天到貨，統一通知取貨／寄出",
-  PICKUP_OPTIONS: ["宅配到府", "公司自取", "面交", "超商店到店（7-11 / 全家）"],
+  PICKUP_OPTIONS: ["宅配到府", "超商店到店（7-11 / 全家）"],
 
   // 收款資訊（送出訂單後顯示給客人匯款）
   BANK: {
@@ -366,9 +366,11 @@ const DEMO_PRODUCTS = [
           <select id="inPickup"><option value="">請選擇</option></select>
           <div class="err">請選擇取貨方式</div>
         </div>
-        <div class="field">
-          <label>備註（選填）</label>
-          <textarea id="inNote" rows="2" placeholder="例：超商店名、宅配地址、希望到貨時間…"></textarea>
+        <div id="pickupExtra"></div>
+        <div class="field" id="f-note">
+          <label>備註 <span class="req">*</span></label>
+          <textarea id="inNote" rows="2" placeholder="例：希望到貨時間、樓層、其他叮嚀…"></textarea>
+          <div class="err">請填寫備註</div>
         </div>
         <div class="checkout-total">
           <span>訂單總金額</span><b id="coTotal">$0</b>
@@ -588,6 +590,60 @@ $("cartHandle").onclick = ()=>{
   $("toggleText").textContent = open ? "收合" : "查看明細";
 };
 
+/* ============ 依取貨方式帶出的欄位 ============ */
+// 每種取貨方式要客人補填的欄位。type:"text" 一般輸入；type:"select" 下拉。
+const PICKUP_EXTRA = {
+  宅配: [
+    { id:"recvName",  label:"收件人姓名", type:"text", placeholder:"請輸入收件人姓名", err:"請填寫收件人姓名" },
+    { id:"recvPhone", label:"收件人電話", type:"text", placeholder:"例：0912345678", err:"請填寫收件人電話", inputmode:"numeric" },
+    { id:"recvAddr",  label:"收件地址",   type:"text", placeholder:"請填寫完整地址（含縣市、郵遞區號）", err:"請填寫收件地址" }
+  ],
+  超商: [
+    { id:"cvsBrand", label:"超商品牌", type:"select", options:["7-11", "全家"], err:"請選擇超商品牌" },
+    { id:"cvsStore", label:"門市名稱", type:"text", placeholder:"例：八德興豐門市", err:"請填寫門市名稱" },
+    { id:"cvsNo",    label:"門市店號", type:"text", placeholder:"例：123456", err:"請填寫門市店號", inputmode:"numeric" }
+  ]
+};
+
+// 判斷目前選的取貨方式屬於哪一組補填欄位
+function pickupKind(val){
+  if(/宅配/.test(val)) return "宅配";
+  if(/超商/.test(val)) return "超商";
+  return "";
+}
+function currentExtraFields(){
+  return PICKUP_EXTRA[pickupKind($("inPickup").value)] || [];
+}
+
+// 依選擇動態產生補填欄位
+function renderPickupExtra(){
+  const box = $("pickupExtra");
+  const fields = currentExtraFields();
+  if(!fields.length){ box.innerHTML = ""; return; }
+  box.innerHTML = fields.map(f=>{
+    const inner = f.type === "select"
+      ? `<select id="${f.id}"><option value="">請選擇</option>${
+          f.options.map(o=>`<option value="${o}">${o}</option>`).join("")}</select>`
+      : `<input type="text" id="${f.id}" placeholder="${f.placeholder||""}"${
+          f.inputmode?` inputmode="${f.inputmode}"`:""}>`;
+    return `<div class="field" id="f-${f.id}">
+      <label>${f.label} <span class="req">*</span></label>
+      ${inner}
+      <div class="err">${f.err}</div>
+    </div>`;
+  }).join("");
+}
+
+// 把補填欄位組成一段文字，寫進「取貨資訊」欄
+function buildPickupInfo(){
+  const fields = currentExtraFields();
+  const parts = fields.map(f=>{
+    const v = ($(f.id) && $(f.id).value.trim()) || "";
+    return v ? `${f.label}：${v}` : "";
+  }).filter(Boolean);
+  return parts.join("｜");
+}
+
 /* ============ 驗證 ============ */
 function validate(){
   let ok = true;
@@ -595,15 +651,23 @@ function validate(){
   const phone = $("inPhone").value.trim();
   const email = $("inEmail").value.trim();
   const pickup = $("inPickup").value;
+  const note = $("inNote").value.trim();
   setInvalid("f-name", !name); if(!name) ok=false;
   const phoneOk = /^[0-9\-\+\s()]{6,}$/.test(phone);
   setInvalid("f-phone", !phoneOk); if(!phoneOk) ok=false;
   const emailOk = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); // 選填，填了才驗證
   setInvalid("f-email", !emailOk); if(!emailOk) ok=false;
   setInvalid("f-pickup", !pickup); if(!pickup) ok=false;
+  // 依取貨方式帶出的欄位逐一驗證（皆必填）
+  currentExtraFields().forEach(f=>{
+    const el = $(f.id);
+    const bad = !el || !el.value.trim();
+    setInvalid("f-" + f.id, bad); if(bad) ok=false;
+  });
+  setInvalid("f-note", !note); if(!note) ok=false;
   return ok;
 }
-function setInvalid(id, bad){ $(id).classList.toggle("invalid", bad); }
+function setInvalid(id, bad){ const el = $(id); if(el) el.classList.toggle("invalid", bad); }
 
 /* ============ 送出訂單 ============ */
 $("submitBtn").onclick = async ()=>{
@@ -628,6 +692,7 @@ $("submitBtn").onclick = async ()=>{
     電話:$("inPhone").value.trim(),
     電子郵件:$("inEmail").value.trim(),
     取貨方式:$("inPickup").value,
+    取貨資訊:buildPickupInfo(),
     備註:$("inNote").value.trim(),
     items
   };
@@ -689,6 +754,7 @@ function showReceipt(orderId, payload, demo){
     <div class="r-line"><span class="l">電話</span><span>${payload.電話}</span></div>
     ${payload.電子郵件?`<div class="r-line"><span class="l">Email</span><span>${payload.電子郵件}</span></div>`:""}
     <div class="r-line"><span class="l">取貨方式</span><span>${payload.取貨方式}</span></div>
+    ${payload.取貨資訊?`<div class="r-line"><span class="l">取貨資訊</span><span>${payload.取貨資訊}</span></div>`:""}
     ${payload.備註?`<div class="r-line"><span class="l">備註</span><span>${payload.備註}</span></div>`:""}
     <div class="r-sec-title">訂購明細</div>
     ${itemsHtml}
@@ -738,6 +804,7 @@ function showReceipt(orderId, payload, demo){
     $("overlay").classList.remove("show");
     $("submitBtn").disabled = false; $("submitBtn").textContent = "送出訂單";
     $("inName").value=""; $("inPhone").value=""; $("inEmail").value=""; $("inPickup").value=""; $("inNote").value="";
+    renderPickupExtra();   // 清掉取貨方式帶出的欄位
     if($("cartPanel").classList.contains("open")) $("cartHandle").click();
   };
 }
@@ -826,6 +893,7 @@ function initHeader(){
     const opt = document.createElement("option");
     opt.value = o; opt.textContent = o; sel.appendChild(opt);
   });
+  sel.onchange = renderPickupExtra;   // 選了取貨方式就帶出對應欄位
 }
 initHeader();
 loadProducts();
