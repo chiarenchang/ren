@@ -368,9 +368,8 @@ const DEMO_PRODUCTS = [
         </div>
         <div id="pickupExtra"></div>
         <div class="field" id="f-note">
-          <label>備註 <span class="req">*</span></label>
+          <label>備註（選填）</label>
           <textarea id="inNote" rows="2" placeholder="例：希望到貨時間、樓層、其他叮嚀…"></textarea>
-          <div class="err">請填寫備註</div>
         </div>
         <div class="checkout-total">
           <span>訂單總金額</span><b id="coTotal">$0</b>
@@ -594,14 +593,16 @@ $("cartHandle").onclick = ()=>{
 // 每種取貨方式要客人補填的欄位。type:"text" 一般輸入；type:"select" 下拉。
 const PICKUP_EXTRA = {
   宅配: [
-    { id:"recvName",  label:"收件人姓名", type:"text", placeholder:"請輸入收件人姓名", err:"請填寫收件人姓名" },
-    { id:"recvPhone", label:"收件人電話", type:"text", placeholder:"例：0912345678", err:"請填寫收件人電話", inputmode:"numeric" },
-    { id:"recvAddr",  label:"收件地址",   type:"text", placeholder:"請填寫完整地址（含縣市、郵遞區號）", err:"請填寫收件地址" }
+    { id:"recvName",  key:"收件人姓名", label:"收件人姓名", type:"text", placeholder:"請輸入收件人姓名", err:"請填寫收件人姓名" },
+    { id:"recvPhone", key:"收件人電話", label:"收件人電話", type:"text", placeholder:"例：0912345678", err:"請填寫收件人電話", inputmode:"numeric" },
+    { id:"recvAddr",  key:"宅配地址",   label:"收件地址",   type:"text", placeholder:"請填寫完整地址（含縣市、郵遞區號）", err:"請填寫收件地址" }
   ],
   超商: [
-    { id:"cvsBrand", label:"超商品牌", type:"select", options:["7-11", "全家"], err:"請選擇超商品牌" },
-    { id:"cvsStore", label:"門市名稱", type:"text", placeholder:"例：八德興豐門市", err:"請填寫門市名稱" },
-    { id:"cvsNo",    label:"門市店號", type:"text", placeholder:"例：123456", err:"請填寫門市店號", inputmode:"numeric" }
+    { id:"cvsBrand",  key:"超商品牌",   label:"超商品牌",   type:"select", options:["7-11", "全家"], err:"請選擇超商品牌" },
+    { id:"cvsStore",  key:"門市名稱",   label:"門市名稱",   type:"text", placeholder:"例：八德興豐門市", err:"請填寫門市名稱" },
+    { id:"cvsNo",     key:"門市店號",   label:"門市店號",   type:"text", placeholder:"例：123456", err:"請填寫門市店號", inputmode:"numeric" },
+    { id:"recvName",  key:"收件人姓名", label:"收件人姓名", type:"text", placeholder:"請輸入取貨人姓名", err:"請填寫收件人姓名" },
+    { id:"recvPhone", key:"收件人電話", label:"收件人電話", type:"text", placeholder:"例：0912345678", err:"請填寫收件人電話", inputmode:"numeric" }
   ]
 };
 
@@ -634,14 +635,13 @@ function renderPickupExtra(){
   }).join("");
 }
 
-// 把補填欄位組成一段文字，寫進「取貨資訊」欄
-function buildPickupInfo(){
-  const fields = currentExtraFields();
-  const parts = fields.map(f=>{
-    const v = ($(f.id) && $(f.id).value.trim()) || "";
-    return v ? `${f.label}：${v}` : "";
-  }).filter(Boolean);
-  return parts.join("｜");
+// 把補填欄位組成物件，各自對映到訂單表的獨立欄位（key）
+function buildPickupPayload(){
+  const out = {};
+  currentExtraFields().forEach(f=>{
+    out[f.key] = ($(f.id) && $(f.id).value.trim()) || "";
+  });
+  return out;
 }
 
 /* ============ 驗證 ============ */
@@ -651,7 +651,6 @@ function validate(){
   const phone = $("inPhone").value.trim();
   const email = $("inEmail").value.trim();
   const pickup = $("inPickup").value;
-  const note = $("inNote").value.trim();
   setInvalid("f-name", !name); if(!name) ok=false;
   const phoneOk = /^[0-9\-\+\s()]{6,}$/.test(phone);
   setInvalid("f-phone", !phoneOk); if(!phoneOk) ok=false;
@@ -664,8 +663,7 @@ function validate(){
     const bad = !el || !el.value.trim();
     setInvalid("f-" + f.id, bad); if(bad) ok=false;
   });
-  setInvalid("f-note", !note); if(!note) ok=false;
-  return ok;
+  return ok; // 備註為選填，不驗證
 }
 function setInvalid(id, bad){ const el = $(id); if(el) el.classList.toggle("invalid", bad); }
 
@@ -692,7 +690,7 @@ $("submitBtn").onclick = async ()=>{
     電話:$("inPhone").value.trim(),
     電子郵件:$("inEmail").value.trim(),
     取貨方式:$("inPickup").value,
-    取貨資訊:buildPickupInfo(),
+    ...buildPickupPayload(),
     備註:$("inNote").value.trim(),
     items
   };
@@ -738,6 +736,11 @@ function showReceipt(orderId, payload, demo){
       <div>${money(i.小計)}</div>
     </div>`).join("");
 
+  // 取貨補填欄位（依客人選的方式，有填才顯示）
+  const extraKeys = ["收件人姓名","收件人電話","宅配地址","超商品牌","門市名稱","門市店號"];
+  const extraHtml = extraKeys.filter(k=>payload[k]).map(k=>
+    `<div class="r-line"><span class="l">${k}</span><span>${payload[k]}</span></div>`).join("");
+
   const b = CONFIG.BANK || {};
   const payLine = (label, value) => `
     <div class="pay-line">
@@ -754,7 +757,7 @@ function showReceipt(orderId, payload, demo){
     <div class="r-line"><span class="l">電話</span><span>${payload.電話}</span></div>
     ${payload.電子郵件?`<div class="r-line"><span class="l">Email</span><span>${payload.電子郵件}</span></div>`:""}
     <div class="r-line"><span class="l">取貨方式</span><span>${payload.取貨方式}</span></div>
-    ${payload.取貨資訊?`<div class="r-line"><span class="l">取貨資訊</span><span>${payload.取貨資訊}</span></div>`:""}
+    ${extraHtml}
     ${payload.備註?`<div class="r-line"><span class="l">備註</span><span>${payload.備註}</span></div>`:""}
     <div class="r-sec-title">訂購明細</div>
     ${itemsHtml}
