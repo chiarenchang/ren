@@ -284,7 +284,7 @@
 /* 把 Apps Script 部署後的 Web App 網址貼到下面引號中。
    留空白時，網頁會自動使用內建示範商品，讓你先看版面。 */
 const CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbznYCzl_tF9ALVON7rnyzvMVfqKvgmfy7fDb9UiNRvcuwIsFRtXGXpK09nTO0KaqhUH/exec",   // Web App 網址
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycby9A49t7fcn6jtwbbjJ5y_QCyr1zqeKBiO9k-JNdV4LBc34ts1tuxppS9bjWeYKjpeU/exec",   // Web App 網址（團購後台v3，新後端）
   GROUP_TITLE: "寢谷家居 韓國家居用品團購",
   HOST_NAME: "團主：嘉樂",
   DEADLINE: "2026/07/05（日）23:59 截止",
@@ -429,6 +429,7 @@ async function loadProducts(){
       const res = await fetch(CONFIG.APPS_SCRIPT_URL + "?action=products");
       const data = await res.json();
       PRODUCTS = (data.products || []).filter(p => String(p.是否上架).trim() === "是");
+      applySettings(data.settings);   // 用 Google Sheet「設定表」覆蓋標題／團主／帳戶等
     }catch(e){
       $("products").innerHTML = '<div class="empty-cat">商品載入失敗，請稍後再試或聯絡團主。</div>';
       return;
@@ -883,6 +884,24 @@ async function reportLast5(orderId, demo){
     toast("回報失敗，請稍後再試");
     btn.disabled = false; btn.textContent = "我已匯款";
   }
+}
+
+/* ============ 套用「設定表」內容（Google Sheet 可即時修改） ============
+   設定表用「項目／內容」兩欄。只有填了的項目才會覆蓋預設值，
+   留白或沒有設定表時，就沿用 CONFIG 內建值（向下相容）。 */
+function applySettings(s){
+  if(!s || typeof s !== "object") return;
+  const setText = (id, val) => { if(val){ $(id).textContent = val; } };
+  setText("gTitle",   s["標題"]);
+  setText("gHost",    s["團主"]);
+  setText("gDeadline",s["截止日期"]);
+  setText("gPickup",  s["取貨說明"]);
+  // 匯款帳戶資訊：有填才覆蓋，讓客人下單後看到的是最新帳戶
+  CONFIG.BANK = CONFIG.BANK || {};
+  if(s["銀行"]) CONFIG.BANK.銀行 = s["銀行"];
+  if(s["戶名"]) CONFIG.BANK.戶名 = s["戶名"];
+  if(s["帳號"]) CONFIG.BANK.帳號 = s["帳號"];
+  if(s["統編"]) CONFIG.BANK.統編 = s["統編"];
 }
 
 /* ============ 初始化 ============ */
